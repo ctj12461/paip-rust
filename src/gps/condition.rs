@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use super::state::{StateData, StateSet};
 use enum_dispatch::enum_dispatch;
 
@@ -13,34 +15,37 @@ pub trait Condition {
     fn check_data(&self, state_data: &StateData) -> bool;
 
     fn name(&self) -> &str;
+
+    fn state_name(&self) -> &str;
 }
 
 #[enum_dispatch(Condition)]
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum ConditionImpl {
     Contain,
     NotContain,
     Compare,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Contain {
     name: String,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct NotContain {
     name: String,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Compare {
     name: String,
+    state_name: String,
     operator: CompareOperator,
     value: StateData,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum CompareOperator {
     Equal,
     NotEqual,
@@ -48,6 +53,11 @@ pub enum CompareOperator {
     GreaterEqual,
     Less,
     LessEqual,
+}
+
+#[derive(Debug)]
+pub struct ConditionSet {
+    conditions: HashMap<String, Vec<ConditionImpl>>,
 }
 
 impl Contain {
@@ -62,6 +72,10 @@ impl Condition for Contain {
     }
 
     fn name(&self) -> &str {
+        &self.name
+    }
+
+    fn state_name(&self) -> &str {
         &self.name
     }
 }
@@ -84,12 +98,22 @@ impl Condition for NotContain {
     fn name(&self) -> &str {
         &self.name
     }
+
+    fn state_name(&self) -> &str {
+        &self.name
+    }
 }
 
 impl Compare {
-    pub fn new(name: String, operator: CompareOperator, value: StateData) -> Self {
+    pub fn new(
+        name: String,
+        state_name: String,
+        operator: CompareOperator,
+        value: StateData,
+    ) -> Self {
         Self {
             name,
+            state_name,
             operator,
             value,
         }
@@ -111,6 +135,10 @@ impl Condition for Compare {
     fn name(&self) -> &str {
         &self.name
     }
+
+    fn state_name(&self) -> &str {
+        &self.state_name
+    }
 }
 
 impl TryFrom<&str> for CompareOperator {
@@ -125,6 +153,33 @@ impl TryFrom<&str> for CompareOperator {
             "<" => Ok(Self::Less),
             "<=" => Ok(Self::LessEqual),
             _ => Err(()),
+        }
+    }
+}
+
+impl ConditionSet {
+    pub fn new() -> Self {
+        Self {
+            conditions: HashMap::new(),
+        }
+    }
+
+    // Find relevant conditions of the given state.
+    pub fn get(&self, name: &str) -> Option<&Vec<ConditionImpl>> {
+        self.conditions.get(name)
+    }
+
+    pub fn insert(&mut self, name: &str, condition: ConditionImpl) {
+        if let Some(conditions) = self.conditions.get_mut(name) {
+            conditions.push(condition);
+        } else {
+            self.conditions.insert(name.to_owned(), vec![condition]);
+        }
+    }
+
+    pub fn remove(&mut self, name: &str, condition: &ConditionImpl) {
+        if let Some(conditions) = self.conditions.get_mut(name) {
+            conditions.retain(|c| c != condition);
         }
     }
 }

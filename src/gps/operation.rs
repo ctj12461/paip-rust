@@ -1,7 +1,8 @@
-use super::condition::ConditionImpl;
-use super::state::{State, StateData, StateSet};
 use std::fmt::{Debug, Formatter, Result as FmtResult};
 use std::rc::Rc;
+
+use super::condition::{Condition, ConditionImpl, ConditionSet};
+use super::state::{State, StateData, StateSet};
 
 #[derive(Debug, Clone)]
 pub struct Operation {
@@ -18,7 +19,7 @@ struct OperationInner {
 }
 
 pub struct Modification {
-    name: String,
+    target_name: String,
     modification: Box<dyn Fn(&mut StateData)>,
 }
 
@@ -57,11 +58,74 @@ impl Operation {
         }
 
         for s in &self.inner.modify_states {
-            let Modification { name, modification } = s;
+            let Modification {
+                target_name: name,
+                modification,
+            } = s;
             state_set
                 .get_mut(&name)
                 .and_then(|state| Some(modification(state)));
         }
+    }
+
+    /// Test if applying this operation will have impact on the given
+    /// goals.
+    pub fn has_affect(&self, current_states: &StateSet, goals: &ConditionSet) -> bool {
+        for state in self.add_states() {
+            let Some(conds) = goals.get(state.name()) else {
+                continue;
+            };
+
+            if conds.iter().any(|cond| {
+                if cond.state_name() != state.name() {
+                    return false;
+                }
+                matches!(cond, ConditionImpl::NotContain(_))
+            }) {
+                return true;
+            }
+        }
+
+        for state_name in self.remove_states() {
+            let Some(conds) = goals.get(state_name) else {
+                continue;
+            };
+
+            if conds.iter().any(|cond| {
+                if cond.state_name() != state_name {
+                    return false;
+                }
+                if matches!(cond, ConditionImpl::Contain(_)) {
+                    true
+                } else if matches!(cond, ConditionImpl::Compare(_)) {
+                    true
+                } else {
+                    false
+                }
+            }) {
+                return true;
+            }
+        }
+
+        for modification in self.modification_states() {
+            let Some(conds) = goals.get(modification.target_name()) else {
+                continue;
+            };
+
+            if conds.iter().any(|cond| {
+                let Some(state_data) = current_states.get(modification.target_name()) else {
+                    return false;
+                };
+
+                let mut tmp = state_data.clone();
+                (modification.modification)(&mut tmp);
+                !cond.check_data(&tmp)
+            }) {
+                return true;
+            }
+        }
+
+        return false;
     }
 }
 
@@ -73,25 +137,22 @@ impl From<OperationInner> for Operation {
     }
 }
 
-// impl Debug for Operation {
-//     fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
-//         write!(f, "{}", format!("{:?}", *self.inner))
-//     }
-// }
-
 impl Modification {
-    pub fn new(name: String, modification: Box<dyn Fn(&mut StateData)>) -> Self {
-        Self { name, modification }
+    pub fn new(target_name: String, modification: Box<dyn Fn(&mut StateData)>) -> Self {
+        Self {
+            target_name,
+            modification,
+        }
     }
 
-    pub fn name(&self) -> &str {
-        &self.name
+    pub fn target_name(&self) -> &str {
+        &self.target_name
     }
 }
 
 impl Debug for Modification {
     fn fmt(&self, f: &mut Formatter) -> FmtResult {
-        write!(f, "Modification {{ name: {} }}", self.name)
+        write!(f, "Modification {{ name: {} }}", self.target_name)
     }
 }
 

@@ -9,7 +9,7 @@ pub struct State {
     data: StateData,
 }
 
-#[derive(Debug, Clone, Eq)]
+#[derive(Debug, Clone, Eq, Hash)]
 pub enum StateData {
     Symbol,
     Integer(i32),
@@ -116,13 +116,5 @@ impl StateSet {
     pub fn has_reached(&self, goals: &Vec<ConditionImpl>) -> bool {
         // Test if the goal state is a subset of current states.
         goals.iter().all(|condition| condition.check(self))
-    }
-
-    pub fn unreached_goals(&self, goals: &Vec<ConditionImpl>) -> Vec<ConditionImpl> {
-        goals
-            .iter()
-            .filter(|condition| !condition.check(self))
-            .cloned()
-            .collect()
     }
 }
